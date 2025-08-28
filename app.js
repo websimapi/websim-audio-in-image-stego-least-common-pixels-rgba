@@ -6,6 +6,7 @@ let stegoImgData = null;
 let maskUint8 = null;
 let audioArrayBuffer = null;
 let lastExtractedOk = false;
+let usedIndices = null;
 
 /* elements */
 const imgInput = document.getElementById("imageInput");
@@ -24,6 +25,7 @@ const origCanvas = document.getElementById("origCanvas");
 const stegoCanvas = document.getElementById("stegoCanvas");
 const maskCanvas = document.getElementById("maskCanvas");
 const aiText = document.getElementById("aiText");
+const highlightToggle = document.getElementById("highlightToggle");
 
 /* helpers */
 function drawImageToCanvas(imgBlob, canvas) {
@@ -69,6 +71,16 @@ function enableControls() {
   polishAiTextBtn.disabled = aiText.value.trim().length === 0;
 }
 
+function renderStego(highlight = false) {
+  if (!stegoImgData) return;
+  stegoCanvas.width = stegoImgData.width; stegoCanvas.height = stegoImgData.height;
+  const ctx = stegoCanvas.getContext("2d");
+  if (!highlight || !usedIndices) { ctx.putImageData(stegoImgData, 0, 0); return; }
+  const vis = new ImageData(new Uint8ClampedArray(stegoImgData.data), stegoImgData.width, stegoImgData.height);
+  for (let i = 0; i < usedIndices.length; i++) { const o = usedIndices[i]*4; vis.data[o]=255; vis.data[o+1]=0; vis.data[o+2]=0; }
+  ctx.putImageData(vis, 0, 0);
+}
+
 /* events */
 imgInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
@@ -96,9 +108,10 @@ analyzeBtn.addEventListener("click", () => {
 embedBtn.addEventListener("click", async () => {
   if (!(origImgData && audioArrayBuffer)) return;
   try {
-    const { stegoImageData, maskUint8: mask, usedIndices } = embedAudioInImage(origImgData, audioArrayBuffer);
+    const { stegoImageData, maskUint8: mask, usedIndices: used } = embedAudioInImage(origImgData, audioArrayBuffer);
     stegoImgData = stegoImageData;
     maskUint8 = mask;
+    usedIndices = used;
 
     // draw stego
     stegoCanvas.width = origCanvas.width;
@@ -111,7 +124,8 @@ embedBtn.addEventListener("click", async () => {
     maskCanvas.height = origCanvas.height;
     maskCanvas.getContext("2d").putImageData(maskImg, 0, 0);
 
-    setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).`);
+    setStats(`Embedded OK. Used ${used.length} pixels (${(used.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).`);
+    renderStego(highlightToggle.checked);
   } catch (err) {
     if (String(err).includes("Insufficient capacity")) {
       const need = requiredBits(), cap = imageCapacityBits();
@@ -237,6 +251,8 @@ rescaleBtn.addEventListener("click", () => {
   setStats(`Rescaled to ${newW}×${newH}. New capacity: ${(imageCapacityBits()/8/1024).toFixed(2)} KB`);
   enableControls();
 });
+
+highlightToggle.addEventListener("change", () => renderStego(highlightToggle.checked));
 
 /* init */
 enableControls();
