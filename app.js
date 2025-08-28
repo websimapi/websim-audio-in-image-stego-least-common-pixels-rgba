@@ -48,9 +48,19 @@ function canvasToBlob(canvas, type = "image/png") {
 
 function setStats(text) { stats.textContent = text; }
 
+function requiredBits() {
+  if (!audioArrayBuffer) return 0;
+  return (16 + new Uint8Array(audioArrayBuffer).length) * 8;
+}
+
+function imageCapacityBits() {
+  return origImgData ? origImgData.width * origImgData.height : 0;
+}
+
 function enableControls() {
   analyzeBtn.disabled = !origImgData;
   embedBtn.disabled = !(origImgData && audioArrayBuffer);
+  rescaleBtn.disabled = !(origImgData && audioArrayBuffer && imageCapacityBits() < requiredBits());
   extractBtn.disabled = !stegoImgData;
   downloadStegoBtn.disabled = !stegoImgData;
   downloadMaskBtn.disabled = !maskUint8;
@@ -77,8 +87,9 @@ audioInput.addEventListener("change", async (e) => {
 
 analyzeBtn.addEventListener("click", () => {
   if (!origImgData) return;
-  const capacityBits = origImgData.width * origImgData.height; // 1 bit per px
-  setStats(`Capacity: ${(capacityBits/8/1024).toFixed(2)} KB (at 1 bit/pixel, blue LSB)\nImage: ${origImgData.width}×${origImgData.height}`);
+  const cap = imageCapacityBits();
+  const need = requiredBits();
+  setStats(`Capacity: ${(cap/8/1024).toFixed(2)} KB\nNeeded: ${(need/8/1024).toFixed(2)} KB\nImage: ${origImgData.width}×${origImgData.height}`);
 });
 
 embedBtn.addEventListener("click", async () => {
@@ -101,7 +112,10 @@ embedBtn.addEventListener("click", async () => {
 
     setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).`);
   } catch (err) {
-    alert(err.message || String(err));
+    if (String(err).includes("Insufficient capacity")) {
+      const need = requiredBits(), cap = imageCapacityBits();
+      setStats(`Insufficient capacity. Need ${need} bits, have ${cap}. Click "Rescale to Fit".`);
+    } else alert(err.message || String(err));
   } finally {
     enableControls();
   }
@@ -206,6 +220,22 @@ polishAiTextBtn.addEventListener("click", async () => {
   }
 });
 
+rescaleBtn.addEventListener("click", () => {
+  if (!(origImgData && audioArrayBuffer)) return;
+  const need = requiredBits(), cap = imageCapacityBits();
+  if (cap >= need) return enableControls();
+  const scale = Math.ceil(Math.sqrt(need / cap));
+  const newW = origCanvas.width * scale, newH = origCanvas.height * scale;
+  const src = document.createElement("canvas");
+  src.width = origCanvas.width; src.height = origCanvas.height;
+  src.getContext("2d").putImageData(origImgData, 0, 0);
+  origCanvas.width = newW; origCanvas.height = newH;
+  const ctx = origCanvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false; ctx.drawImage(src, 0, 0, newW, newH);
+  origImgData = ctx.getImageData(0, 0, newW, newH);
+  setStats(`Rescaled to ${newW}×${newH}. New capacity: ${(imageCapacityBits()/8/1024).toFixed(2)} KB`);
+  enableControls();
+});
+
 /* init */
 enableControls();
-
