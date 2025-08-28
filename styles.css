@@ -17,8 +17,7 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .stats { margin-top:10px; font-size:14px; color:#333; white-space:pre-wrap; }
 .canvases { display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-top:16px; }
 .canvasCol h2 { margin: 0 0 8px; font-size: 16px; color:#222; }
-canvas { width:100%; height:auto; image-rendering: crisp-edges; border:1px solid #eee; border-radius:8px; background:#fff; }
+canvas { width:100%; height:auto; image-rendering: pixelated; image-rendering: crisp-edges; border:1px solid #eee; border-radius:8px; background:#fff; }
 textarea { width:100%; resize:vertical; padding:12px; border:1px solid #ddd; border-radius:8px; background:#fafafa; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Space Mono", Consolas, "Liberation Mono", monospace; }
 footer { max-width:1100px; margin: 0 auto; padding: 8px 20px 24px; color: var(--muted); }
 @media (max-width: 980px) { .canvases { grid-template-columns: 1fr; } }
-

@@ -5,8 +5,8 @@ let origImgData = null;
 let stegoImgData = null;
 let maskUint8 = null;
 let audioArrayBuffer = null;
+let audioFileType = null;
 let lastExtractedOk = false;
-let usedIndices = null;
 
 /* elements */
 const imgInput = document.getElementById("imageInput");
@@ -23,9 +23,9 @@ const stats = document.getElementById("stats");
 
 const origCanvas = document.getElementById("origCanvas");
 const stegoCanvas = document.getElementById("stegoCanvas");
+const diffCanvas = document.getElementById("diffCanvas");
 const maskCanvas = document.getElementById("maskCanvas");
 const aiText = document.getElementById("aiText");
-const highlightToggle = document.getElementById("highlightToggle");
 
 /* helpers */
 function drawImageToCanvas(imgBlob, canvas) {
@@ -43,6 +43,20 @@ function drawImageToCanvas(imgBlob, canvas) {
     img.onerror = reject;
     img.src = url;
   });
+}
+
+function playAudioBuffer(buffer, type) {
+  if (!buffer || buffer.byteLength === 0) return;
+  try {
+    const blob = new Blob([buffer], { type });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.play();
+    audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
+  } catch (e) {
+    console.error("Error playing audio:", e);
+    alert("Could not play extracted audio. See console for details.");
+  }
 }
 
 function canvasToBlob(canvas, type = "image/png") {
@@ -71,16 +85,6 @@ function enableControls() {
   polishAiTextBtn.disabled = aiText.value.trim().length === 0;
 }
 
-function renderStego(highlight = false) {
-  if (!stegoImgData) return;
-  stegoCanvas.width = stegoImgData.width; stegoCanvas.height = stegoImgData.height;
-  const ctx = stegoCanvas.getContext("2d");
-  if (!highlight || !usedIndices) { ctx.putImageData(stegoImgData, 0, 0); return; }
-  const vis = new ImageData(new Uint8ClampedArray(stegoImgData.data), stegoImgData.width, stegoImgData.height);
-  for (let i = 0; i < usedIndices.length; i++) { const o = usedIndices[i]*4; vis.data[o]=255; vis.data[o+1]=0; vis.data[o+2]=0; }
-  ctx.putImageData(vis, 0, 0);
-}
-
 /* events */
 imgInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
@@ -94,6 +98,7 @@ audioInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
   audioArrayBuffer = await file.arrayBuffer();
+  audioFileType = file.type;
   setStats(`Audio loaded: ${(audioArrayBuffer.byteLength/1024).toFixed(1)} KB`);
   enableControls();
 });
@@ -105,13 +110,45 @@ analyzeBtn.addEventListener("click", () => {
   setStats(`Capacity: ${(cap/8/1024).toFixed(2)} KB\nNeeded: ${(need/8/1024).toFixed(2)} KB\nImage: ${origImgData.width}×${origImgData.height}`);
 });
 
+function drawDiffImage(original, stego, canvas) {
+  const width = original.width;
+  const height = original.height;
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  const diffImageData = ctx.createImageData(width, height);
+  const origD = original.data;
+  const stegD = stego.data;
+  const diffD = diffImageData.data;
+
+  for (let i = 0; i < origD.length; i += 4) {
+    if (
+      origD[i]   !== stegD[i]   ||
+      origD[i+1] !== stegD[i+1] ||
+      origD[i+2] !== stegD[i+2] ||
+      origD[i+3] !== stegD[i+3]
+    ) {
+      // If pixel is different, color it magenta to make it highly visible
+      diffD[i]   = 255; // R
+      diffD[i+1] = 0;   // G
+      diffD[i+2] = 255; // B
+      diffD[i+3] = 255; // A
+    } else {
+      // Otherwise, make it grayscale
+      const avg = (origD[i] + origD[i+1] + origD[i+2]) / 3;
+      diffD[i] = diffD[i+1] = diffD[i+2] = avg;
+      diffD[i+3] = 255;
+    }
+  }
+  ctx.putImageData(diffImageData, 0, 0);
+}
+
 embedBtn.addEventListener("click", async () => {
   if (!(origImgData && audioArrayBuffer)) return;
   try {
-    const { stegoImageData, maskUint8: mask, usedIndices: used } = embedAudioInImage(origImgData, audioArrayBuffer);
+    const { stegoImageData, maskUint8: mask, usedIndices } = embedAudioInImage(origImgData, audioArrayBuffer);
     stegoImgData = stegoImageData;
     maskUint8 = mask;
-    usedIndices = used;
 
     // draw stego
     stegoCanvas.width = origCanvas.width;
@@ -123,9 +160,11 @@ embedBtn.addEventListener("click", async () => {
     maskCanvas.width = origCanvas.width;
     maskCanvas.height = origCanvas.height;
     maskCanvas.getContext("2d").putImageData(maskImg, 0, 0);
+    
+    // draw diff
+    drawDiffImage(origImgData, stegoImgData, diffCanvas);
 
-    setStats(`Embedded OK. Used ${used.length} pixels (${(used.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).`);
-    renderStego(highlightToggle.checked);
+    setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).\nLSB changes are invisible. See "Altered Pixels" view for a visual diff.\nClick "Verify Extract" to play back the embedded audio.`);
   } catch (err) {
     if (String(err).includes("Insufficient capacity")) {
       const need = requiredBits(), cap = imageCapacityBits();
@@ -141,7 +180,8 @@ extractBtn.addEventListener("click", () => {
   try {
     const buf = extractAudioFromImage(stegoImgData);
     lastExtractedOk = true;
-    setStats(`Extraction OK. Bytes: ${buf.byteLength}`);
+    setStats(`Extraction OK. Bytes: ${buf.byteLength}. Playing audio...`);
+    playAudioBuffer(buf, audioFileType);
   } catch (e) {
     lastExtractedOk = false;
     alert("Extraction failed: " + (e.message || e));
@@ -251,8 +291,6 @@ rescaleBtn.addEventListener("click", () => {
   setStats(`Rescaled to ${newW}×${newH}. New capacity: ${(imageCapacityBits()/8/1024).toFixed(2)} KB`);
   enableControls();
 });
-
-highlightToggle.addEventListener("change", () => renderStego(highlightToggle.checked));
 
 /* init */
 enableControls();
