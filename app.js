@@ -14,6 +14,7 @@ const analyzeBtn = document.getElementById("analyzeBtn");
 const embedBtn = document.getElementById("embedBtn");
 const extractBtn = document.getElementById("extractBtn");
 const downloadStegoBtn = document.getElementById("downloadStegoBtn");
+const rescaleBtn = document.getElementById("rescaleBtn");
 const downloadMaskBtn = document.getElementById("downloadMaskBtn");
 const genAiTextBtn = document.getElementById("genAiTextBtn");
 const polishAiTextBtn = document.getElementById("polishAiTextBtn");
