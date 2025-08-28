@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Audio-in-Image Stego (Least-Common Pixels, RGBA)</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "crc-32": "https://esm.sh/crc-32@1.2.2"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>Audio-in-Image Stego</h1>
+    <p>Embed an audio file into an image using RGBA LSBs on least-common pixels. Export a protection mask and AI instructions.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="inputs">
+        <label>
+          Base Image (PNG recommended)
+          <input type="file" id="imageInput" accept="image/*" />
+        </label>
+        <label>
+          Audio File
+          <input type="file" id="audioInput" accept="audio/*" />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="analyzeBtn" disabled>Analyze Image</button>
+        <button id="embedBtn" disabled>Embed Audio</button>
+        <button id="extractBtn" disabled>Verify Extract</button>
+      </div>
+
+      <div class="downloads">
+        <button id="downloadStegoBtn" disabled>Download Stego PNG</button>
+        <button id="downloadMaskBtn" disabled>Download Protection Mask (PNG)</button>
+        <button id="genAiTextBtn" disabled>Generate AI Instructions</button>
+        <button id="polishAiTextBtn" disabled>Polish via AI</button>
+      </div>
+
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <section class="canvases">
+      <div class="canvasCol">
+        <h2>Original</h2>
+        <canvas id="origCanvas"></canvas>
+      </div>
+      <div class="canvasCol">
+        <h2>Stego Preview</h2>
+        <canvas id="stegoCanvas"></canvas>
+      </div>
+      <div class="canvasCol">
+        <h2>Protection Mask</h2>
+        <canvas id="maskCanvas"></canvas>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>AI Instructions</h2>
+      <textarea id="aiText" rows="10" spellcheck="false" placeholder="AI instructions will appear here..."></textarea>
+    </section>
+  </main>
+
+  <footer>
+    <small>Tip: Use lossless PNG to preserve RGBA LSBs. Protected (black) pixels must not be altered.</small>
+  </footer>
+
+  <script type="module" src="./app.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
+
