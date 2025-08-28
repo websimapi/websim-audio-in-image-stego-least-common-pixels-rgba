@@ -54,7 +54,7 @@ function requiredBits() {
 }
 
 function imageCapacityBits() {
-  return origImgData ? origImgData.width * origImgData.height : 0;
+  return origImgData ? origImgData.width * origImgData.height * 4 : 0; // RGBA LSBs
 }
 
 function enableControls() {
@@ -183,7 +183,7 @@ genAiTextBtn.addEventListener("click", async () => {
 
   const text = [
     "You are an image-editing AI. Task:",
-    "- Input image contains embedded audio in the least significant bit of BLUE for specific pixels.",
+    "- Input image contains embedded audio in the least significant bit of the RGBA channels for specific pixels.",
     "- The attached mask marks PROTECTED pixels in BLACK (0). Do not alter those pixels at all.",
     "- You may embellish only the WHITE pixels. Keep dimensions and color profile unchanged. Output must be lossless PNG.",
     "",

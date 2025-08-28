@@ -63,6 +63,33 @@ function readBitsFromBlueLSB(imgData, indices, bitCount) {
   return out;
 }
 
+// Write bits across RGBA LSBs (R,G,B,A) along given indices
+function writeBitsToRGBALSB(imgData, indices, bits) {
+  const d = imgData.data;
+  let bi = 0;
+  for (let j = 0; j < indices.length && bi < bits.length; j++) {
+    const px = indices[j] * 4;
+    for (let c = 0; c < 4 && bi < bits.length; c++) {
+      d[px + c] = (d[px + c] & 0xFE) | bits[bi++];
+    }
+  }
+  return bi;
+}
+
+// Read bits across RGBA LSBs (R,G,B,A) along given indices
+function readBitsFromRGBALSB(imgData, indices, bitCount) {
+  const d = imgData.data;
+  const out = new Uint8Array(bitCount);
+  let bi = 0;
+  for (let j = 0; j < indices.length && bi < bitCount; j++) {
+    const px = indices[j] * 4;
+    for (let c = 0; c < 4 && bi < bitCount; c++) {
+      out[bi++] = d[px + c] & 1;
+    }
+  }
+  return out;
+}
+
 function bytesToBits(bytes) {
   const bits = new Uint8Array(bytes.length * 8);
   let k = 0;
@@ -129,13 +156,14 @@ export function embedAudioInImage(origImageData, audioArrayBuffer) {
 
   const bits = bytesToBits(payload);
   const ordered = rankLeastCommonPixels(img);
-  const capacity = ordered.length; // 1 bit per pixel
+  const capacity = ordered.length * 4; // 4 bits per pixel (RGBA LSBs)
   if (bits.length > capacity) {
     throw new Error(`Insufficient capacity. Need ${bits.length} bits, have ${capacity}`);
   }
 
-  const used = ordered.slice(0, bits.length);
-  const written = writeBitsToBlueLSB(img, used, bits);
+  const pixelsNeeded = Math.ceil(bits.length / 4);
+  const used = ordered.slice(0, pixelsNeeded);
+  const written = writeBitsToRGBALSB(img, used, bits);
   if (written !== bits.length) throw new Error("Failed to write all bits.");
 
   const mask = new Uint8ClampedArray(img.width * img.height);
@@ -151,13 +179,13 @@ export function embedAudioInImage(origImageData, audioArrayBuffer) {
 export function extractAudioFromImage(imgData) {
   const ordered = rankLeastCommonPixels(imgData);
   // Header is 16 bytes => 128 bits
-  const headerBits = readBitsFromBlueLSB(imgData, ordered, 128);
+  const headerBits = readBitsFromRGBALSB(imgData, ordered, 128);
   const headerBytes = bitsToBytes(headerBits);
   const meta = parseHeader(headerBytes);
   if (!meta) throw new Error("Header not found.");
   const totalBits = 128 + meta.len * 8;
-  if (totalBits > ordered.length) throw new Error("Not enough capacity to read payload.");
-  const allBits = readBitsFromBlueLSB(imgData, ordered, totalBits);
+  if (totalBits > ordered.length * 4) throw new Error("Not enough capacity to read payload.");
+  const allBits = readBitsFromRGBALSB(imgData, ordered, totalBits);
   const allBytes = bitsToBytes(allBits);
   const payload = allBytes.slice(16);
   const crc = CRC32.buf(payload) >>> 0;
@@ -178,4 +206,3 @@ export function maskToImageData(mask, width, height) {
   }
   return out;
 }
-
