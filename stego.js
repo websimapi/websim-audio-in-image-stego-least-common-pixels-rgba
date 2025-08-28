@@ -147,7 +147,13 @@ function parseHeader(headerBytes) {
  * Returns: { stegoImageData, usedIndices, maskUint8 } where maskUint8 is 0(protected)/255(free)
  */
 export function embedAudioInImage(origImageData, audioArrayBuffer) {
-  const img = new ImageData(new Uint8ClampedArray(origImageData.data), origImageData.width, origImageData.height);
+  // Create proper copy of the original image data
+  const imgDataCopy = new Uint8ClampedArray(origImageData.data.length);
+  for (let i = 0; i < origImageData.data.length; i++) {
+    imgDataCopy[i] = origImageData.data[i];
+  }
+  const img = new ImageData(imgDataCopy, origImageData.width, origImageData.height);
+  
   const audioBytes = new Uint8Array(audioArrayBuffer);
   const header = makeHeader(audioBytes);
   const payload = new Uint8Array(header.length + audioBytes.length);
@@ -155,7 +161,7 @@ export function embedAudioInImage(origImageData, audioArrayBuffer) {
   payload.set(audioBytes, header.length);
 
   const bits = bytesToBits(payload);
-  const ordered = rankLeastCommonPixels(img);
+  const ordered = rankLeastCommonPixels(origImageData); // Use original for ranking
   const capacity = ordered.length * 4; // 4 bits per pixel (RGBA LSBs)
   if (bits.length > capacity) {
     throw new Error(`Insufficient capacity. Need ${bits.length} bits, have ${capacity}`);
