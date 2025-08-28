@@ -3,6 +3,7 @@ import { embedAudioInImage, extractAudioFromImage, maskToImageData } from "./ste
 /* state */
 let origImgData = null;
 let stegoImgData = null;
+let testStegoImgData = null;
 let maskUint8 = null;
 let audioArrayBuffer = null;
 let audioFileType = null;
@@ -11,9 +12,11 @@ let lastExtractedOk = false;
 /* elements */
 const imgInput = document.getElementById("imageInput");
 const audioInput = document.getElementById("audioInput");
+const testStegoInput = document.getElementById("testStegoInput");
 const analyzeBtn = document.getElementById("analyzeBtn");
 const embedBtn = document.getElementById("embedBtn");
 const extractBtn = document.getElementById("extractBtn");
+const testExtractBtn = document.getElementById("testExtractBtn");
 const downloadStegoBtn = document.getElementById("downloadStegoBtn");
 const rescaleBtn = document.getElementById("rescaleBtn");
 const downloadMaskBtn = document.getElementById("downloadMaskBtn");
@@ -79,6 +82,7 @@ function enableControls() {
   embedBtn.disabled = !(origImgData && audioArrayBuffer);
   rescaleBtn.disabled = !(origImgData && audioArrayBuffer && imageCapacityBits() < requiredBits());
   extractBtn.disabled = !stegoImgData;
+  testExtractBtn.disabled = !testStegoImgData;
   downloadStegoBtn.disabled = !stegoImgData;
   downloadMaskBtn.disabled = !maskUint8;
   genAiTextBtn.disabled = !(stegoImgData && maskUint8);
@@ -100,6 +104,15 @@ audioInput.addEventListener("change", async (e) => {
   audioArrayBuffer = await file.arrayBuffer();
   audioFileType = file.type;
   setStats(`Audio loaded: ${(audioArrayBuffer.byteLength/1024).toFixed(1)} KB`);
+  enableControls();
+});
+
+testStegoInput.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const tempCanvas = document.createElement("canvas");
+  testStegoImgData = await drawImageToCanvas(file, tempCanvas);
+  setStats(`Test stego image loaded: ${tempCanvas.width}×${tempCanvas.height}. Click "Test Extract from Upload" to verify.`);
   enableControls();
 });
 
@@ -126,7 +139,7 @@ function drawDiffImage(original, stego, canvas) {
       origD[i]   !== stegD[i]   ||
       origD[i+1] !== stegD[i+1] ||
       origD[i+2] !== stegD[i+2] ||
-      origD[i+3] !== stegD[i+3]
+      origD[i+3] !== stegoD[i+3]
     ) {
       // If pixel is different, color it magenta to make it highly visible
       diffD[i]   = 255; // R
@@ -185,6 +198,19 @@ extractBtn.addEventListener("click", () => {
   } catch (e) {
     lastExtractedOk = false;
     alert("Extraction failed: " + (e.message || e));
+  }
+  enableControls();
+});
+
+testExtractBtn.addEventListener("click", () => {
+  if (!testStegoImgData) return;
+  try {
+    const buf = extractAudioFromImage(testStegoImgData);
+    setStats(`Test extraction OK! Bytes: ${buf.byteLength}. Playing audio... This confirms the stego embedding is working properly.`);
+    playAudioBuffer(buf, audioFileType || "audio/wav");
+  } catch (e) {
+    setStats(`Test extraction FAILED: ${e.message || e}. This indicates the stego image doesn't contain properly embedded audio data.`);
+    console.error("Test extraction error:", e);
   }
   enableControls();
 });
