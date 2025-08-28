@@ -45,6 +45,11 @@ function drawImageToCanvas(imgBlob, canvas) {
   });
 }
 
+function clearCanvas(canvas) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
 function playAudioBuffer(buffer, type) {
   if (!buffer || buffer.byteLength === 0) return;
   try {
@@ -78,7 +83,7 @@ function enableControls() {
   analyzeBtn.disabled = !origImgData;
   embedBtn.disabled = !(origImgData && audioArrayBuffer);
   rescaleBtn.disabled = !(origImgData && audioArrayBuffer && imageCapacityBits() < requiredBits());
-  extractBtn.disabled = !stegoImgData;
+  extractBtn.disabled = !origImgData; // Can extract from any loaded image
   downloadStegoBtn.disabled = !stegoImgData;
   downloadMaskBtn.disabled = !maskUint8;
   genAiTextBtn.disabled = !(stegoImgData && maskUint8);
@@ -89,8 +94,17 @@ function enableControls() {
 imgInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
+
+  // Clear previous state
+  stegoImgData = null;
+  maskUint8 = null;
+  clearCanvas(stegoCanvas);
+  clearCanvas(diffCanvas);
+  clearCanvas(maskCanvas);
+  aiText.value = '';
+
   origImgData = await drawImageToCanvas(file, origCanvas);
-  setStats(`Image loaded: ${origCanvas.width}×${origCanvas.height}`);
+  setStats(`Image loaded: ${origCanvas.width}×${origCanvas.height}. Ready to embed or extract.`);
   enableControls();
 });
 
@@ -164,7 +178,7 @@ embedBtn.addEventListener("click", async () => {
     // draw diff
     drawDiffImage(origImgData, stegoImgData, diffCanvas);
 
-    setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).\nLSB changes are invisible. See "Altered Pixels" view for a visual diff.\nClick "Verify Extract" to play back the embedded audio.`);
+    setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).\nLSB changes are invisible. See "Altered Pixels" view for a visual diff.\nClick "Extract & Play" to play back the embedded audio.`);
   } catch (err) {
     if (String(err).includes("Insufficient capacity")) {
       const need = requiredBits(), cap = imageCapacityBits();
@@ -176,12 +190,16 @@ embedBtn.addEventListener("click", async () => {
 });
 
 extractBtn.addEventListener("click", () => {
-  if (!stegoImgData) return;
+  const sourceImageData = stegoImgData || origImgData; // Use stego if available, otherwise original
+  if (!sourceImageData) return;
+  
   try {
-    const buf = extractAudioFromImage(stegoImgData);
+    const buf = extractAudioFromImage(sourceImageData);
     lastExtractedOk = true;
     setStats(`Extraction OK. Bytes: ${buf.byteLength}. Playing audio...`);
-    playAudioBuffer(buf, audioFileType);
+    // Try to guess common audio types if not set from embedding step
+    const fileType = audioFileType || 'audio/wav'; 
+    playAudioBuffer(buf, fileType);
   } catch (e) {
     lastExtractedOk = false;
     alert("Extraction failed: " + (e.message || e));
