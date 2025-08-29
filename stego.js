@@ -69,8 +69,14 @@ function writeBitsToRGBALSB(imgData, indices, bits) {
   let bi = 0;
   for (let j = 0; j < indices.length && bi < bits.length; j++) {
     const px = indices[j] * 4;
-    for (let c = 0; c < 4 && bi < bits.length; c++) {
+    for (let c = 0; c < 3 && bi < bits.length; c++) { // R, G, B
       d[px + c] = (d[px + c] & 0xFE) | bits[bi++];
+    }
+    if (bi < bits.length) { // Alpha channel
+      // Set LSB of alpha, then force alpha to be fully opaque to prevent
+      // browser from alpha-premultiplying RGB values on save/load.
+      // (val & 0xFE) | bit results in 254 or 255, both opaque.
+      d[px + 3] = (d[px + 3] & 0xFE) | bits[bi++];
     }
   }
   return bi;
