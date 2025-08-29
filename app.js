@@ -38,7 +38,8 @@ function drawImageToCanvas(imgBlob, canvas) {
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
-      resolve(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      resolve(imageData);
     };
     img.onerror = reject;
     img.src = url;
@@ -146,33 +147,33 @@ function drawDiffImage(original, stego, canvas) {
 embedBtn.addEventListener("click", async () => {
   if (!(origImgData && audioArrayBuffer)) return;
   try {
-    // 1. Draw original image to stego canvas as a starting point
-    stegoCanvas.width = origCanvas.width;
-    stegoCanvas.height = origCanvas.height;
-    const stegoCtx = stegoCanvas.getContext("2d", { willReadFrequently: true });
-    stegoCtx.drawImage(origCanvas, 0, 0);
+    // 1. Create a fresh copy of the original image data to modify.
+    const stegoDataForModification = new ImageData(
+      new Uint8ClampedArray(origImgData.data),
+      origImgData.width,
+      origImgData.height
+    );
 
-    // 2. Get image data from the stego canvas to be modified
-    const stegoDataForModification = stegoCtx.getImageData(0, 0, stegoCanvas.width, stegoCanvas.height);
-
-    // 3. Embed audio, which will modify the ImageData object directly
+    // 2. Embed audio, which will modify the stegoDataForModification object directly.
     const { maskUint8: mask, usedIndices } = embedAudioInImage(stegoDataForModification, audioArrayBuffer);
     
-    // The stegoDataForModification object now contains the modified pixels.
-    // Assign it to the global state.
+    // 3. The stegoDataForModification object now contains the modified pixels.
+    //    Assign it to the global state.
     stegoImgData = stegoDataForModification;
     maskUint8 = mask;
 
-    // 4. Put the modified image data back onto the canvas
-    stegoCtx.putImageData(stegoImgData, 0, 0);
+    // 4. Put the modified image data onto the stego canvas.
+    stegoCanvas.width = stegoImgData.width;
+    stegoCanvas.height = stegoImgData.height;
+    stegoCanvas.getContext("2d").putImageData(stegoImgData, 0, 0);
 
-    // draw mask
+    // 5. Draw the protection mask.
     const maskImg = maskToImageData(maskUint8, origCanvas.width, origCanvas.height);
     maskCanvas.width = origCanvas.width;
     maskCanvas.height = origCanvas.height;
     maskCanvas.getContext("2d").putImageData(maskImg, 0, 0);
     
-    // draw diff
+    // 6. Draw the visual difference between the original and stego images.
     drawDiffImage(origImgData, stegoImgData, diffCanvas);
 
     setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).\nLSB changes are invisible. See "Altered Pixels" view for a visual diff.\nClick "Verify Extract" to play back the embedded audio.`);
