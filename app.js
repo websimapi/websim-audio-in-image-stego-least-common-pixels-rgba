@@ -139,7 +139,7 @@ function drawDiffImage(original, stego, canvas) {
       origD[i]   !== stegD[i]   ||
       origD[i+1] !== stegD[i+1] ||
       origD[i+2] !== stegD[i+2] ||
-      origD[i+3] !== stegoD[i+3]
+      origD[i+3] !== stegD[i+3]
     ) {
       // If pixel is different, color it magenta to make it highly visible
       diffD[i]   = 255; // R
