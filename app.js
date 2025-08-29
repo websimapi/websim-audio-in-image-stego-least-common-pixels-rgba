@@ -70,7 +70,7 @@ function setStats(text) { stats.textContent = text; }
 
 function requiredBits() {
   if (!audioArrayBuffer) return 0;
-  return (16 + new Uint8Array(audioArrayBuffer).length) * 8;
+  return (14 + new Uint8Array(audioArrayBuffer).length) * 8; // Header is 14 bytes
 }
 
 function imageCapacityBits() {
@@ -177,7 +177,7 @@ embedBtn.addEventListener("click", async () => {
     // draw diff
     drawDiffImage(origImgData, stegoImgData, diffCanvas);
 
-    setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).\nLSB changes are invisible. See "Altered Pixels" view for a visual diff.\nClick "Verify Extract" to play back the embedded audio.`);
+    setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length / (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).\nLSB changes are invisible. See "Altered Pixels" view for a visual diff.\nClick "Verify Extract" to play back the embedded audio.`);
   } catch (err) {
     if (String(err).includes("Insufficient capacity")) {
       const need = requiredBits(), cap = imageCapacityBits();
