@@ -153,12 +153,12 @@ function parseHeader(headerBytes) {
  * Returns: { stegoImageData, usedIndices, maskUint8 } where maskUint8 is 0(protected)/255(free)
  */
 export function embedAudioInImage(origImageData, audioArrayBuffer) {
-  // Create proper copy of the original image data
-  const imgDataCopy = new Uint8ClampedArray(origImageData.data.length);
-  for (let i = 0; i < origImageData.data.length; i++) {
-    imgDataCopy[i] = origImageData.data[i];
-  }
-  const img = new ImageData(imgDataCopy, origImageData.width, origImageData.height);
+  // Create a deep copy of the image data to avoid modifying the original.
+  const img = new ImageData(
+    new Uint8ClampedArray(origImageData.data),
+    origImageData.width,
+    origImageData.height
+  );
   
   const audioBytes = new Uint8Array(audioArrayBuffer);
   const header = makeHeader(audioBytes);
