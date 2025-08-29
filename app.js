@@ -3,7 +3,6 @@ import { embedAudioInImage, extractAudioFromImage, maskToImageData } from "./ste
 /* state */
 let origImgData = null;
 let stegoImgData = null;
-let testStegoImgData = null;
 let maskUint8 = null;
 let audioArrayBuffer = null;
 let audioFileType = null;
@@ -12,11 +11,9 @@ let lastExtractedOk = false;
 /* elements */
 const imgInput = document.getElementById("imageInput");
 const audioInput = document.getElementById("audioInput");
-const testStegoInput = document.getElementById("testStegoInput");
 const analyzeBtn = document.getElementById("analyzeBtn");
 const embedBtn = document.getElementById("embedBtn");
 const extractBtn = document.getElementById("extractBtn");
-const testExtractBtn = document.getElementById("testExtractBtn");
 const downloadStegoBtn = document.getElementById("downloadStegoBtn");
 const rescaleBtn = document.getElementById("rescaleBtn");
 const downloadMaskBtn = document.getElementById("downloadMaskBtn");
@@ -70,7 +67,7 @@ function setStats(text) { stats.textContent = text; }
 
 function requiredBits() {
   if (!audioArrayBuffer) return 0;
-  return (14 + new Uint8Array(audioArrayBuffer).length) * 8; // Header is 14 bytes
+  return (16 + new Uint8Array(audioArrayBuffer).length) * 8;
 }
 
 function imageCapacityBits() {
@@ -82,7 +79,6 @@ function enableControls() {
   embedBtn.disabled = !(origImgData && audioArrayBuffer);
   rescaleBtn.disabled = !(origImgData && audioArrayBuffer && imageCapacityBits() < requiredBits());
   extractBtn.disabled = !stegoImgData;
-  testExtractBtn.disabled = !testStegoImgData;
   downloadStegoBtn.disabled = !stegoImgData;
   downloadMaskBtn.disabled = !maskUint8;
   genAiTextBtn.disabled = !(stegoImgData && maskUint8);
@@ -104,15 +100,6 @@ audioInput.addEventListener("change", async (e) => {
   audioArrayBuffer = await file.arrayBuffer();
   audioFileType = file.type;
   setStats(`Audio loaded: ${(audioArrayBuffer.byteLength/1024).toFixed(1)} KB`);
-  enableControls();
-});
-
-testStegoInput.addEventListener("change", async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const tempCanvas = document.createElement("canvas");
-  testStegoImgData = await drawImageToCanvas(file, tempCanvas);
-  setStats(`Test stego image loaded: ${tempCanvas.width}×${tempCanvas.height}. Click "Test Extract from Upload" to verify.`);
   enableControls();
 });
 
@@ -159,14 +146,25 @@ function drawDiffImage(original, stego, canvas) {
 embedBtn.addEventListener("click", async () => {
   if (!(origImgData && audioArrayBuffer)) return;
   try {
-    const { stegoImageData, maskUint8: mask, usedIndices } = embedAudioInImage(origImgData, audioArrayBuffer);
-    stegoImgData = stegoImageData;
+    // 1. Draw original image to stego canvas as a starting point
+    stegoCanvas.width = origCanvas.width;
+    stegoCanvas.height = origCanvas.height;
+    const stegoCtx = stegoCanvas.getContext("2d", { willReadFrequently: true });
+    stegoCtx.drawImage(origCanvas, 0, 0);
+
+    // 2. Get image data from the stego canvas to be modified
+    const stegoDataForModification = stegoCtx.getImageData(0, 0, stegoCanvas.width, stegoCanvas.height);
+
+    // 3. Embed audio, which will modify the ImageData object directly
+    const { maskUint8: mask, usedIndices } = embedAudioInImage(stegoDataForModification, audioArrayBuffer);
+    
+    // The stegoDataForModification object now contains the modified pixels.
+    // Assign it to the global state.
+    stegoImgData = stegoDataForModification;
     maskUint8 = mask;
 
-    // draw stego
-    stegoCanvas.width = origImgData.width;
-    stegoCanvas.height = origImgData.height;
-    stegoCanvas.getContext("2d").putImageData(stegoImgData, 0, 0);
+    // 4. Put the modified image data back onto the canvas
+    stegoCtx.putImageData(stegoImgData, 0, 0);
 
     // draw mask
     const maskImg = maskToImageData(maskUint8, origCanvas.width, origCanvas.height);
@@ -177,12 +175,15 @@ embedBtn.addEventListener("click", async () => {
     // draw diff
     drawDiffImage(origImgData, stegoImgData, diffCanvas);
 
-    setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length / (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).\nLSB changes are invisible. See "Altered Pixels" view for a visual diff.\nClick "Verify Extract" to play back the embedded audio.`);
+    setStats(`Embedded OK. Used ${usedIndices.length} pixels (${(usedIndices.length/ (origCanvas.width*origCanvas.height) * 100).toFixed(2)}%).\nLSB changes are invisible. See "Altered Pixels" view for a visual diff.\nClick "Verify Extract" to play back the embedded audio.`);
   } catch (err) {
     if (String(err).includes("Insufficient capacity")) {
       const need = requiredBits(), cap = imageCapacityBits();
       setStats(`Insufficient capacity. Need ${need} bits, have ${cap}. Click "Rescale to Fit".`);
-    } else alert(err.message || String(err));
+    } else {
+      alert(err.message || String(err));
+      console.error(err);
+    }
   } finally {
     enableControls();
   }
@@ -191,26 +192,16 @@ embedBtn.addEventListener("click", async () => {
 extractBtn.addEventListener("click", () => {
   if (!stegoImgData) return;
   try {
-    const buf = extractAudioFromImage(stegoImgData);
+    // Read directly from the stego canvas context to be sure we have the latest data
+    const stegoCtx = stegoCanvas.getContext("2d", { willReadFrequently: true });
+    const currentStegoData = stegoCtx.getImageData(0, 0, stegoCanvas.width, stegoCanvas.height);
+    const buf = extractAudioFromImage(currentStegoData);
     lastExtractedOk = true;
     setStats(`Extraction OK. Bytes: ${buf.byteLength}. Playing audio...`);
     playAudioBuffer(buf, audioFileType);
   } catch (e) {
     lastExtractedOk = false;
     alert("Extraction failed: " + (e.message || e));
-  }
-  enableControls();
-});
-
-testExtractBtn.addEventListener("click", () => {
-  if (!testStegoImgData) return;
-  try {
-    const buf = extractAudioFromImage(testStegoImgData);
-    setStats(`Test extraction OK! Bytes: ${buf.byteLength}. Playing audio... This confirms the stego embedding is working properly.`);
-    playAudioBuffer(buf, audioFileType || "audio/wav");
-  } catch (e) {
-    setStats(`Test extraction FAILED: ${e.message || e}. This indicates the stego image doesn't contain properly embedded audio data.`);
-    console.error("Test extraction error:", e);
   }
   enableControls();
 });

@@ -63,30 +63,20 @@ function readBitsFromBlueLSB(imgData, indices, bitCount) {
   return out;
 }
 
-/**
- * Write bits across RGBA LSBs (R,G,B,A) along given indices
- */
+// Write bits across RGBA LSBs (R,G,B,A) along given indices
 function writeBitsToRGBALSB(imgData, indices, bits) {
   const d = imgData.data;
   let bi = 0;
   for (let j = 0; j < indices.length && bi < bits.length; j++) {
     const px = indices[j] * 4;
-    for (let c = 0; c < 3 && bi < bits.length; c++) { // R, G, B
+    for (let c = 0; c < 4 && bi < bits.length; c++) {
       d[px + c] = (d[px + c] & 0xFE) | bits[bi++];
-    }
-    if (bi < bits.length) { // Alpha channel
-      // Set LSB of alpha, then force alpha to be fully opaque to prevent
-      // browser from alpha-premultiplying RGB values on save/load.
-      // (val & 0xFE) | bit results in 254 or 255, both opaque.
-      d[px + 3] = (d[px + 3] & 0xFE) | bits[bi++];
     }
   }
   return bi;
 }
 
-/**
- * Read bits from RGBA LSBs (R,G,B,A) along given indices
- */
+// Read bits across RGBA LSBs (R,G,B,A) along given indices
 function readBitsFromRGBALSB(imgData, indices, bitCount) {
   const d = imgData.data;
   const out = new Uint8Array(bitCount);
@@ -122,8 +112,8 @@ function bitsToBytes(bits) {
 }
 
 /**
- * Simple header: 32b magic, 16b version, 32b audioLen, 32b crc32, 16b reserved
- * Total 14 bytes. Stored MSB-first.
+ * Simple header: 32b magic, 16b version, 32b audioLen, 32b crc32, 16b reserved, 16b headerBits
+ * Total 16 bytes. Stored MSB-first.
  */
 function makeHeader(audioBytes) {
   const magic = 0x41554449; // 'AUDI'
@@ -131,41 +121,33 @@ function makeHeader(audioBytes) {
   const len = audioBytes.length >>> 0;
   const crc = CRC32.buf(audioBytes) >>> 0;
   const reserved = 0;
-  const header = new Uint8Array(14);
+  const header = new Uint8Array(16);
   const dv = new DataView(header.buffer);
   dv.setUint32(0, magic);
   dv.setUint16(4, version);
   dv.setUint32(6, len);
   dv.setUint32(10, crc);
+  dv.setUint16(14, reserved);
   return header;
 }
 
 function parseHeader(headerBytes) {
-  if (headerBytes.length < 14) return null;
   const dv = new DataView(headerBytes.buffer, headerBytes.byteOffset, headerBytes.byteLength);
   const magic = dv.getUint32(0);
-  if (magic !== 0x41554449) return null;
-
   const version = dv.getUint16(4);
-  if (version !== 0x0001) return null;
-
   const len = dv.getUint32(6);
   const crc = dv.getUint32(10);
-  return { len, crc };
+  const reserved = dv.getUint16(14);
+  if (magic !== 0x41554449 || version !== 0x0001) return null;
+  return { len, crc, reserved };
 }
 
 /**
- * Embed audio sequentially into image pixel LSBs
- * Returns: { stegoImageData, usedIndices, maskUint8 } where maskUint8 is 0(protected)/255(free)
+ * Embed audio using least-common pixels (RGBA LSB).
+ * This function MODIFIES the passed imageData object directly.
+ * Returns: { usedIndices, maskUint8 } where maskUint8 is 0(protected)/255(free)
  */
-export function embedAudioInImage(origImageData, audioArrayBuffer) {
-  // Create a deep copy of the image data to avoid modifying the original.
-  const img = new ImageData(
-    new Uint8ClampedArray(origImageData.data),
-    origImageData.width,
-    origImageData.height
-  );
-  
+export function embedAudioInImage(imageDataToModify, audioArrayBuffer) {
   const audioBytes = new Uint8Array(audioArrayBuffer);
   const header = makeHeader(audioBytes);
   const payload = new Uint8Array(header.length + audioBytes.length);
@@ -173,52 +155,39 @@ export function embedAudioInImage(origImageData, audioArrayBuffer) {
   payload.set(audioBytes, header.length);
 
   const bits = bytesToBits(payload);
-  const totalPixels = img.width * img.height;
-  const capacity = totalPixels * 4; // 4 bits per pixel (RGBA LSBs)
+  const ordered = rankLeastCommonPixels(imageDataToModify);
+  const capacity = ordered.length * 4; // 4 bits per pixel (RGBA LSBs)
   if (bits.length > capacity) {
     throw new Error(`Insufficient capacity. Need ${bits.length} bits, have ${capacity}`);
   }
 
-  // Create a simple sequential array of pixel indices
-  const indices = new Uint32Array(totalPixels);
-  for(let i=0; i<totalPixels; i++) indices[i] = i;
-
   const pixelsNeeded = Math.ceil(bits.length / 4);
-  const used = indices.slice(0, pixelsNeeded);
-  const written = writeBitsToRGBALSB(img, used, bits);
+  const used = ordered.slice(0, pixelsNeeded);
+  const written = writeBitsToRGBALSB(imageDataToModify, used, bits);
   if (written !== bits.length) throw new Error("Failed to write all bits.");
 
-  const mask = new Uint8ClampedArray(img.width * img.height);
+  const mask = new Uint8ClampedArray(imageDataToModify.width * imageDataToModify.height);
   mask.fill(255);
   for (let i = 0; i < used.length; i++) mask[used[i]] = 0;
 
-  return { stegoImageData: img, usedIndices: used, maskUint8: mask };
+  return { usedIndices: used, maskUint8: mask };
 }
 
 /**
  * Attempt extraction from an image that used the same method
  */
 export function extractAudioFromImage(imgData) {
-  const totalPixels = imgData.width * imgData.height;
-  const indices = new Uint32Array(totalPixels);
-  for(let i=0; i<totalPixels; i++) indices[i] = i;
-
-  // Header is 14 bytes => 112 bits
-  const headerBits = readBitsFromRGBALSB(imgData, indices, 112);
+  const ordered = rankLeastCommonPixels(imgData);
+  // Header is 16 bytes => 128 bits
+  const headerBits = readBitsFromRGBALSB(imgData, ordered, 128);
   const headerBytes = bitsToBytes(headerBits);
   const meta = parseHeader(headerBytes);
-  if (!meta) throw new Error("Header not found. This is not a valid stego image or it's corrupted.");
-
-  const totalBits = 112 + meta.len * 8;
-  if (totalBits > totalPixels * 4) throw new Error("Not enough capacity to read payload.");
-
-  // We can be more efficient by only reading what we need instead of the whole image
-  const pixelsToRead = Math.ceil(totalBits / 4);
-  const dataIndices = indices.slice(0, pixelsToRead);
-
-  const allBits = readBitsFromRGBALSB(imgData, dataIndices, totalBits);
+  if (!meta) throw new Error("Header not found.");
+  const totalBits = 128 + meta.len * 8;
+  if (totalBits > ordered.length * 4) throw new Error("Not enough capacity to read payload.");
+  const allBits = readBitsFromRGBALSB(imgData, ordered, totalBits);
   const allBytes = bitsToBytes(allBits);
-  const payload = allBytes.slice(14); // 14 bytes for header
+  const payload = allBytes.slice(16);
   const crc = CRC32.buf(payload) >>> 0;
   if (crc !== meta.crc) throw new Error("CRC mismatch. Data likely corrupted.");
   return payload.buffer;
